@@ -767,9 +767,8 @@ window.onload = function() {
     });
 };
 
-// --- CORREÇÃO 1: PERMISSÃO DO PROMOTOR ---
 function podeGerenciar(logado, alvoId) {
-    if (logado.id === alvoId) return true; // <-- CORREÇÃO: Promotor pode ver a si mesmo
+    if (logado.id === alvoId) return true;
     if (logado.id === "master" || logado.cargo === "master") return true;
     if (logado.cargo === "gestor") return true;
     
@@ -1371,6 +1370,7 @@ function carregarHistoricoDoBanco(forcarNuvem = false) {
     .catch(e => { div.innerHTML = "Erro de rede."; console.error(e); });
 }
 
+// CORREÇÃO: Função Historico Atualizada (Anti-Undefined)
 function renderizarListaHistorico() {
     const div = document.getElementById("lista-historico");
     let dataInicio = document.getElementById('filtro-data-inicio-historico').value;
@@ -1379,23 +1379,30 @@ function renderizarListaHistorico() {
     let promAlvo = document.getElementById('filtro-promotor-historico').value;
 
     let filtrados = dadosHistoricoGlobal.filter(row => {
-        if(tipoHistoricoAtual === 'estoque' && row.Tipo !== 'estoque') return false;
-        if(tipoHistoricoAtual === 'geral' && row.Tipo === 'estoque') return false; 
-        
-        let pLogin = row.PromotorLogin || "";
+        // NORMALIZAÇÃO: Trata as variações dos nomes das colunas vindas da Planilha
+        let tipoAcao = (row.Tipo || row["Ação"] || row.Acao || row.tipo || "").toLowerCase();
+        let pLogin = (row.PromotorLogin || row.Promotor || row.promotor || "").trim();
+        let dataLinha = row.DataIso || row.Data || row.data || row.Timestamp || "";
+
+        // Verifica se é uma ação de estoque ou de venda baseada no tipo de ação da planilha
+        let isEstoque = tipoAcao.includes('estoque') || tipoAcao.includes('auditoria') || tipoAcao.includes('conferência');
+
+        if(tipoHistoricoAtual === 'estoque' && !isEstoque) return false;
+        if(tipoHistoricoAtual === 'geral' && isEstoque) return false;
+
         let pObj = bancoUsuarios[pLogin];
-        
+
         if (supAlvo && supAlvo !== "todos") {
             if(!pObj || pObj.criadoPor !== supAlvo) return false;
         } else if(supAlvo === "todos") {
             if(pObj && !podeGerenciar(usuarioLogado, pObj.criadoPor)) return false;
         }
-        
+
         if (promAlvo && promAlvo !== "todos" && pLogin !== promAlvo) return false;
-        
-        if(dataInicio) { let dt = new Date(row.DataIso || row.Data); if(dt < new Date(dataInicio + "T00:00:00")) return false; }
-        if(dataFim) { let dt = new Date(row.DataIso || row.Data); if(dt > new Date(dataFim + "T23:59:59")) return false; }
-        
+
+        if(dataInicio) { let dt = new Date(dataLinha); if(dt < new Date(dataInicio + "T00:00:00")) return false; }
+        if(dataFim) { let dt = new Date(dataLinha); if(dt > new Date(dataFim + "T23:59:59")) return false; }
+
         return true;
     });
 
@@ -1403,9 +1410,28 @@ function renderizarListaHistorico() {
     
     let html = "";
     filtrados.forEach(row => {
-        let dataFormatada = row.Data || "Sem Data";
-        let nomePromotor = bancoUsuarios[row.PromotorLogin] ? bancoUsuarios[row.PromotorLogin].nome : row.PromotorLogin;
-        let detalhe = tipoHistoricoAtual === 'estoque' ? `[${row.Loja}] ${row.Aparelhos}` : `Venda: ${row.Aparelhos} | ${row.Vendedor}`;
+        // DATA FORMATADA (Puxando de qualquer variação de coluna)
+        let dataFormatada = row.Data || row.data || row.Timestamp || row["Carimbo de data/hora"] || "Sem Data";
+        if (dataFormatada.includes('T')) {
+            let d = new Date(dataFormatada);
+            if(!isNaN(d)) dataFormatada = d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR').slice(0, 5);
+        }
+
+        // NOME DO USUÁRIO
+        let pLogin = (row.PromotorLogin || row.Promotor || row.promotor || "");
+        let nomePromotor = bancoUsuarios[pLogin] ? bancoUsuarios[pLogin].nome : pLogin;
+        if (!nomePromotor) nomePromotor = "Usuário Desconhecido";
+
+        // DETALHES DA AÇÃO (Lê a coluna Detalhes se existir, senão monta a frase)
+        let detalhe = row.Detalhes || row.detalhes;
+        if (!detalhe) {
+            if (tipoHistoricoAtual === 'estoque') {
+                detalhe = `[${row.Loja || 'Geral'}] ${row.Aparelhos || row.Aparelho || 'Atualização de Estoque'}`;
+            } else {
+                detalhe = `Venda: ${row.Aparelhos || row.Aparelho || '?'} | ${row.Vendedor || 'Vendedor não informado'}`;
+            }
+        }
+
         let icone = tipoHistoricoAtual === 'estoque' ? '<i data-lucide="package" style="color:#ff9800;" class="lucide-sm"></i>' : '<i data-lucide="shopping-bag" style="color:#28a745;" class="lucide-sm"></i>';
         
         html += `<div style="background:var(--bg-container); border:1px solid var(--border-color); padding:12px; border-radius:8px; margin-bottom:10px; display:flex; flex-direction:column; gap:5px; box-shadow: 0 1px 3px var(--shadow-color);">
@@ -1486,7 +1512,6 @@ function isCampaignActiveInMonth(startStr, endStr, mesSelecionado) {
     return dtStart <= endOfMonth && dtEnd >= startOfMonth;
 }
 
-// --- CORREÇÃO 4: A CALCULADORA DO DASHBOARD ---
 function gerarGraficos(dadosVendas) {
     if (!dadosVendas) dadosVendas = [];
     let totalGeral = 0; let vendasPorLoja = {}; let vendasPorModelo = {}; let metricas = {}; let modelosFocoVendidos = {};
@@ -1590,7 +1615,6 @@ function gerarGraficos(dadosVendas) {
 
     let mesFiltro = document.getElementById("seletor-mes-dash").value;
 
-    // ATUALIZAÇÃO DO CÁLCULO DE COMISSÃO (NÍVEL DINÂMICO POR APARELHO)
     Object.values(metricas).forEach(m => {
         let comissaoUser = 0; 
         let supkey = m.login; 
@@ -1602,18 +1626,15 @@ function gerarGraficos(dadosVendas) {
         let vComissaoSup = valoresComissao[supkey] || valoresComissao["geral"] || {};
         let niveisGlobais = vComissaoSup.niveis || [{ id: 'l1', meta: 0 }, { id: 'l2', meta: 10 }];
         
-        // Fallback para ler estruturas antigas caso existam
         let aparelhosCfg = vComissaoSup.aparelhos || vComissaoSup || {};
         let campanhasAtivas = vComissaoSup.campanhasPersonalizadas || [];
 
-        // Analisar TODOS os aparelhos vendidos e não apenas os premium
         for(let modChave in m.modelosVendidosGeral) {
             let qtdMod = m.modelosVendidosGeral[modChave];
             let cfg = aparelhosCfg[modChave] || {};
             
-            // NOVO: Verifica se o botão "Comissionado" está desativado
             let aparelhoEhComissionado = (cfg.comissionado !== false && cfg.comissionado !== "false");
-            if (!aparelhoEhComissionado) continue; // Pula a soma de R$ e vai para o próximo
+            if (!aparelhoEhComissionado) continue; 
 
             let nivelAlcancado = 'l1';
             let maiorMeta = -1;
@@ -1626,7 +1647,6 @@ function gerarGraficos(dadosVendas) {
                 }
             });
 
-            // Tratamento rigoroso para valores zero
             let payout = 0;
             if (cfg[nivelAlcancado] !== undefined && cfg[nivelAlcancado] !== "") {
                 payout = Number(cfg[nivelAlcancado]);
@@ -2002,7 +2022,6 @@ async function salvarConfiguracoesGlobais(mostrarAviso = true) {
     }
 }
 
-// --- CORREÇÃO 2 E 3: LAYOUT DO ADMIN (FOCO E COMISSIONADO) ---
 function renderizarInputsFoco() {
     const container = document.getElementById('admin-foco-container');
     const selSup = document.getElementById('seletor-foco-sup');
@@ -2087,13 +2106,12 @@ function renderizarInputsFoco() {
     for (let ap in mapaEmojis) {
         let isFoco = premiumSup[ap] ? "checked": "";
         let cfg = aparelhosCfg[ap] || {};
-        // Se for antigo e não tiver a opção salva, assumimos que é comissionado por padrão
+        
         let isComissionado = (cfg.comissionado !== false && cfg.comissionado !== "false") ? "checked": "";
         
         let inputsNiveisHtml = `<div id="box-comissao-${ap}" style="display: ${isComissionado ? 'flex': 'none'}; gap:10px; overflow-x:auto;">`;
         niveisGlobais.forEach(nv => {
             let v = cfg[nv.id] !== undefined ? cfg[nv.id] : 0;
-            // Se a meta específica for cadastrada, puxa ela. Senão, puxa a global (nv.meta)
             let metaEspec = cfg[nv.id + '_meta'] !== undefined ? cfg[nv.id + '_meta'] : nv.meta;
             
             inputsNiveisHtml += `
@@ -2134,7 +2152,7 @@ function renderizarInputsFoco() {
 function toggleVisibilidadeComissao(checkbox, ap) {
     let box = document.getElementById(`box-comissao-${ap}`);
     if (box) box.style.display = checkbox.checked ? 'flex' : 'none';
-    atualizarListaPremiumGlobal(); // Adicionado para salvar automaticamente ao clicar
+    atualizarListaPremiumGlobal();
 }
 
 function adicionarNivelGlobal() {
@@ -2197,15 +2215,13 @@ function atualizarListaPremiumGlobal() {
         
         aparelhosComissao[ap] = { comissionado: isComissionado };
         
-        // Salva o valor da comissão
         document.querySelectorAll(`.input-comissao-nivel[data-ap="${ap}"]`).forEach(inp => {
             let lvl = inp.getAttribute('data-lvl');
             aparelhosComissao[ap][lvl] = Number(inp.value) || 0;
         });
-        // Salva a meta específica
         document.querySelectorAll(`.input-meta-nivel[data-ap="${ap}"]`).forEach(inp => {
             let lvl = inp.getAttribute('data-lvl');
-            aparelhosComissao[ap][lvl + '_meta'] = Number(inp.value); // Sem o "|| 0" para ele aceitar 0 legitimamente
+            aparelhosComissao[ap][lvl + '_meta'] = Number(inp.value);
         });
     });
 
