@@ -1370,7 +1370,7 @@ function carregarHistoricoDoBanco(forcarNuvem = false) {
     .catch(e => { div.innerHTML = "Erro de rede."; console.error(e); });
 }
 
-// CORREÇÃO: Função Historico Atualizada (Anti-Undefined)
+// CORREÇÃO FINAL: FUNÇÃO COM BUSCA DINÂMICA DE COLUNAS
 function renderizarListaHistorico() {
     const div = document.getElementById("lista-historico");
     let dataInicio = document.getElementById('filtro-data-inicio-historico').value;
@@ -1379,12 +1379,15 @@ function renderizarListaHistorico() {
     let promAlvo = document.getElementById('filtro-promotor-historico').value;
 
     let filtrados = dadosHistoricoGlobal.filter(row => {
-        // NORMALIZAÇÃO: Trata as variações dos nomes das colunas vindas da Planilha
-        let tipoAcao = (row.Tipo || row["Ação"] || row.Acao || row.tipo || "").toLowerCase();
-        let pLogin = (row.PromotorLogin || row.Promotor || row.promotor || "").trim();
-        let dataLinha = row.DataIso || row.Data || row.data || row.Timestamp || "";
+        // BUSCA DINÂMICA: Ignora espaços extras ou nomes levemente diferentes na sua planilha
+        let kAcao = Object.keys(row).find(k => k.toLowerCase().includes('aç') || k.toLowerCase().includes('ac') || k.toLowerCase().includes('tipo'));
+        let kProm = Object.keys(row).find(k => k.toLowerCase().includes('promotor'));
+        let kData = Object.keys(row).find(k => k.toLowerCase().includes('data') || k.toLowerCase().includes('carimbo') || k.toLowerCase().includes('time'));
 
-        // Verifica se é uma ação de estoque ou de venda baseada no tipo de ação da planilha
+        let tipoAcao = kAcao ? String(row[kAcao]).toLowerCase() : "";
+        let pLogin = kProm ? String(row[kProm]).trim() : "";
+        let dataLinha = kData ? row[kData] : "";
+
         let isEstoque = tipoAcao.includes('estoque') || tipoAcao.includes('auditoria') || tipoAcao.includes('conferência');
 
         if(tipoHistoricoAtual === 'estoque' && !isEstoque) return false;
@@ -1400,8 +1403,8 @@ function renderizarListaHistorico() {
 
         if (promAlvo && promAlvo !== "todos" && pLogin !== promAlvo) return false;
 
-        if(dataInicio) { let dt = new Date(dataLinha); if(dt < new Date(dataInicio + "T00:00:00")) return false; }
-        if(dataFim) { let dt = new Date(dataLinha); if(dt > new Date(dataFim + "T23:59:59")) return false; }
+        if(dataInicio && dataLinha) { let dt = new Date(dataLinha); if(dt < new Date(dataInicio + "T00:00:00")) return false; }
+        if(dataFim && dataLinha) { let dt = new Date(dataLinha); if(dt > new Date(dataFim + "T23:59:59")) return false; }
 
         return true;
     });
@@ -1410,25 +1413,45 @@ function renderizarListaHistorico() {
     
     let html = "";
     filtrados.forEach(row => {
-        // DATA FORMATADA (Puxando de qualquer variação de coluna)
-        let dataFormatada = row.Data || row.data || row.Timestamp || row["Carimbo de data/hora"] || "Sem Data";
-        if (dataFormatada.includes('T')) {
+        // DATA (Busca Dinâmica)
+        let kData = Object.keys(row).find(k => k.toLowerCase().includes('data') || k.toLowerCase().includes('carimbo') || k.toLowerCase().includes('time'));
+        let dataFormatada = kData ? row[kData] : "Sem Data";
+        
+        // Tenta formatar a data caso venha como padrão ISO do Google (com 'T')
+        if (dataFormatada !== "Sem Data" && typeof dataFormatada === 'string' && dataFormatada.includes('T')) {
             let d = new Date(dataFormatada);
             if(!isNaN(d)) dataFormatada = d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR').slice(0, 5);
+        } else if (dataFormatada !== "Sem Data" && !isNaN(new Date(dataFormatada))) {
+            let d = new Date(dataFormatada);
+            if (!dataFormatada.toString().includes("/")) {
+                dataFormatada = d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR').slice(0, 5);
+            }
         }
 
-        // NOME DO USUÁRIO
-        let pLogin = (row.PromotorLogin || row.Promotor || row.promotor || "");
+        // PROMOTOR (Busca Dinâmica)
+        let kProm = Object.keys(row).find(k => k.toLowerCase().includes('promotor'));
+        let pLogin = kProm ? String(row[kProm]).trim() : "";
         let nomePromotor = bancoUsuarios[pLogin] ? bancoUsuarios[pLogin].nome : pLogin;
-        if (!nomePromotor) nomePromotor = "Usuário Desconhecido";
+        if (!nomePromotor || nomePromotor === "undefined") nomePromotor = "Usuário Desconhecido";
 
-        // DETALHES DA AÇÃO (Lê a coluna Detalhes se existir, senão monta a frase)
-        let detalhe = row.Detalhes || row.detalhes;
+        // DETALHES DA AÇÃO (Busca Dinâmica)
+        let kDet = Object.keys(row).find(k => k.toLowerCase().includes('detalhe'));
+        let detalhe = kDet ? row[kDet] : null;
+
+        // Fallback caso a coluna "Detalhes" não exista
         if (!detalhe) {
+            let kAparelho = Object.keys(row).find(k => k.toLowerCase().includes('aparelho'));
+            let kLoja = Object.keys(row).find(k => k.toLowerCase().includes('loja'));
+            let kVendedor = Object.keys(row).find(k => k.toLowerCase().includes('vendedor'));
+            
+            let aparelhoVal = kAparelho ? row[kAparelho] : '?';
+            let lojaVal = kLoja ? row[kLoja] : 'Geral';
+            let vendVal = kVendedor ? row[kVendedor] : 'Vendedor não informado';
+
             if (tipoHistoricoAtual === 'estoque') {
-                detalhe = `[${row.Loja || 'Geral'}] ${row.Aparelhos || row.Aparelho || 'Atualização de Estoque'}`;
+                detalhe = `[${lojaVal}] ${aparelhoVal}`;
             } else {
-                detalhe = `Venda: ${row.Aparelhos || row.Aparelho || '?'} | ${row.Vendedor || 'Vendedor não informado'}`;
+                detalhe = `Venda: ${aparelhoVal} | ${vendVal}`;
             }
         }
 
@@ -1687,7 +1710,6 @@ function gerarGraficos(dadosVendas) {
     elComissao.dataset.valor = valorFormatado;
     elComissao.innerText = "R$ ****"; document.getElementById("icone-olho-comissao").innerHTML = '<i data-lucide="eye" style="margin:0;"></i>'; loadIcons();
 
-    // CARREGA A LISTA DE FOCO ATUAL DA REGIÃO
     let supAlvoParaFoco = (supervisorFoco !== "todos") ? supervisorFoco : "geral";
     let pSup = aparelhosPremium[supAlvoParaFoco]; if (!pSup || Object.keys(pSup).length === 0) pSup = aparelhosPremium["geral"] || {};
     let listaFocoAtuais = Object.keys(pSup).filter(k => pSup[k]).map(k => `<span style="display:inline-block; background:var(--bg-item); color:var(--cor-texto); padding:4px 8px; border-radius:6px; margin:2px; border: 1px solid var(--border-color); font-weight:bold;">${mapaEmojis[k] || ''} ${k.toUpperCase()}</span>`);
