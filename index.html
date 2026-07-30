@@ -1379,15 +1379,12 @@ function renderizarListaHistorico() {
     let promAlvo = document.getElementById('filtro-promotor-historico').value;
 
     let filtrados = dadosHistoricoGlobal.filter(row => {
-        // BUSCA DINÂMICA: Ignora espaços extras ou nomes levemente diferentes na sua planilha
-        let kAcao = Object.keys(row).find(k => k.toLowerCase().includes('aç') || k.toLowerCase().includes('ac') || k.toLowerCase().includes('tipo'));
-        let kProm = Object.keys(row).find(k => k.toLowerCase().includes('promotor'));
-        let kData = Object.keys(row).find(k => k.toLowerCase().includes('data') || k.toLowerCase().includes('carimbo') || k.toLowerCase().includes('time'));
+        // NORMALIZAÇÃO: Trata as variações dos nomes das colunas vindas da Planilha
+        let tipoAcao = (row.Tipo || row["Ação"] || row.Acao || row.tipo || "").toLowerCase();
+        let pLogin = (row.PromotorLogin || row.Promotor || row.promotor || "").trim();
+        let dataLinha = row.DataIso || row.Data || row.data || row.Timestamp || "";
 
-        let tipoAcao = kAcao ? String(row[kAcao]).toLowerCase() : "";
-        let pLogin = kProm ? String(row[kProm]).trim() : "";
-        let dataLinha = kData ? row[kData] : "";
-
+        // Verifica se é uma ação de estoque ou de venda baseada no tipo de ação da planilha
         let isEstoque = tipoAcao.includes('estoque') || tipoAcao.includes('auditoria') || tipoAcao.includes('conferência');
 
         if(tipoHistoricoAtual === 'estoque' && !isEstoque) return false;
@@ -1403,8 +1400,8 @@ function renderizarListaHistorico() {
 
         if (promAlvo && promAlvo !== "todos" && pLogin !== promAlvo) return false;
 
-        if(dataInicio && dataLinha) { let dt = new Date(dataLinha); if(dt < new Date(dataInicio + "T00:00:00")) return false; }
-        if(dataFim && dataLinha) { let dt = new Date(dataLinha); if(dt > new Date(dataFim + "T23:59:59")) return false; }
+        if(dataInicio) { let dt = new Date(dataLinha); if(dt < new Date(dataInicio + "T00:00:00")) return false; }
+        if(dataFim) { let dt = new Date(dataLinha); if(dt > new Date(dataFim + "T23:59:59")) return false; }
 
         return true;
     });
@@ -1413,62 +1410,12 @@ function renderizarListaHistorico() {
     
     let html = "";
     filtrados.forEach(row => {
-        // DATA (Busca Dinâmica)
-        let kData = Object.keys(row).find(k => k.toLowerCase().includes('data') || k.toLowerCase().includes('carimbo') || k.toLowerCase().includes('time'));
-        let dataFormatada = kData ? row[kData] : "Sem Data";
-        
-        // Tenta formatar a data caso venha como padrão ISO do Google (com 'T')
-        if (dataFormatada !== "Sem Data" && typeof dataFormatada === 'string' && dataFormatada.includes('T')) {
+        // DATA FORMATADA (Puxando de qualquer variação de coluna)
+        let dataFormatada = row.Data || row.data || row.Timestamp || row["Carimbo de data/hora"] || "Sem Data";
+        if (dataFormatada.includes('T')) {
             let d = new Date(dataFormatada);
             if(!isNaN(d)) dataFormatada = d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR').slice(0, 5);
-        } else if (dataFormatada !== "Sem Data" && !isNaN(new Date(dataFormatada))) {
-            let d = new Date(dataFormatada);
-            if (!dataFormatada.toString().includes("/")) {
-                dataFormatada = d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR').slice(0, 5);
-            }
         }
-
-        // PROMOTOR (Busca Dinâmica)
-        let kProm = Object.keys(row).find(k => k.toLowerCase().includes('promotor'));
-        let pLogin = kProm ? String(row[kProm]).trim() : "";
-        let nomePromotor = bancoUsuarios[pLogin] ? bancoUsuarios[pLogin].nome : pLogin;
-        if (!nomePromotor || nomePromotor === "undefined") nomePromotor = "Usuário Desconhecido";
-
-        // DETALHES DA AÇÃO (Busca Dinâmica)
-        let kDet = Object.keys(row).find(k => k.toLowerCase().includes('detalhe'));
-        let detalhe = kDet ? row[kDet] : null;
-
-        // Fallback caso a coluna "Detalhes" não exista
-        if (!detalhe) {
-            let kAparelho = Object.keys(row).find(k => k.toLowerCase().includes('aparelho'));
-            let kLoja = Object.keys(row).find(k => k.toLowerCase().includes('loja'));
-            let kVendedor = Object.keys(row).find(k => k.toLowerCase().includes('vendedor'));
-            
-            let aparelhoVal = kAparelho ? row[kAparelho] : '?';
-            let lojaVal = kLoja ? row[kLoja] : 'Geral';
-            let vendVal = kVendedor ? row[kVendedor] : 'Vendedor não informado';
-
-            if (tipoHistoricoAtual === 'estoque') {
-                detalhe = `[${lojaVal}] ${aparelhoVal}`;
-            } else {
-                detalhe = `Venda: ${aparelhoVal} | ${vendVal}`;
-            }
-        }
-
-        let icone = tipoHistoricoAtual === 'estoque' ? '<i data-lucide="package" style="color:#ff9800;" class="lucide-sm"></i>' : '<i data-lucide="shopping-bag" style="color:#28a745;" class="lucide-sm"></i>';
-        
-        html += `<div style="background:var(--bg-container); border:1px solid var(--border-color); padding:12px; border-radius:8px; margin-bottom:10px; display:flex; flex-direction:column; gap:5px; box-shadow: 0 1px 3px var(--shadow-color);">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:12px; font-weight:bold; color:var(--cor-secundaria);">${dataFormatada}</span>
-                <span style="font-size:13px; font-weight:bold; color:#0086ff;"><i data-lucide="user" class="lucide-sm"></i> ${nomePromotor}</span>
-            </div>
-            <div style="font-size:14px; color:var(--cor-texto); display:flex; align-items:flex-start; gap:8px;">
-                ${icone} <span>${detalhe}</span>
-            </div>
-        </div>`;
-    });
-    div.innerHTML = html; loadIcons();
-}
 
         // NOME DO USUÁRIO
         let pLogin = (row.PromotorLogin || row.Promotor || row.promotor || "");
