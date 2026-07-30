@@ -8,6 +8,10 @@
 <!-- CHart JS para os Gráficos -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+
+<!-- Confetti para Gamificação -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
 <!-- Biblioteca de Ícones Profissionais (Lucide) -->
 <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -608,7 +612,7 @@ body.dark-mode .logo-rodape-login { filter: invert(1) brightness(2); opacity: 0.
 <div class="controles-topo-acompanhamento">
 <select id="seletor-mes" class="seletor-mes" onchange="carregarDadosDoBanco()"><option value="">Mês Atual</option></select>
 </div>
-<button class="btn-sistema" id="btn-atualizar-acomp" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); margin-bottom: 20px;" onclick="carregarDadosDoBanco()"><i data-lucide="refresh-cw"></i> Atualizar Dados</button>
+<div style="display:flex;"><button class="btn-sistema" id="btn-atualizar-acomp" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); margin-bottom: 20px; width: calc(50% - 5px);" onclick="carregarDadosDoBanco()"><i data-lucide="refresh-cw"></i> Atualizar</button><button class="btn-sistema" id="btn-export-acomp" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); margin-bottom: 20px; margin-left: 10px; width: calc(50% - 5px);" onclick="baixarRelatorioAcomp()"><i data-lucide="download"></i> Excel</button></div>
 <div class="container-acompanhamento" id="lista-agrupada">Carregando dados da nuvem...</div>
 </div>
 
@@ -660,7 +664,7 @@ body.dark-mode .logo-rodape-login { filter: invert(1) brightness(2); opacity: 0.
         </div>
     </div>
 
-    <button class="btn-sistema" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); margin-bottom: 20px;" onclick="carregarHistoricoDoBanco(true)"><i data-lucide="cloud-download"></i> Atualizar Nuvem</button>
+    <div style="display:flex;"><button class="btn-sistema" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); margin-bottom: 20px; width: calc(50% - 5px);" onclick="carregarHistoricoDoBanco(true)"><i data-lucide="cloud-download"></i> Atualizar</button><button class="btn-sistema" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); margin-bottom: 20px; margin-left: 10px; width: calc(50% - 5px);" onclick="baixarRelatorioHist()"><i data-lucide="download"></i> Excel</button></div>
     <div id="lista-historico" style="text-align: left; min-height: 300px; max-height: 600px; overflow-y: auto; background: var(--bg-card); padding: 18px; border-radius: 16px; border: 1px solid var(--border-color);">Carregando histórico da nuvem...</div>
 </div>
 
@@ -1025,7 +1029,7 @@ function mostrarToast(msg, tipo = "sucesso") {
     if(tipo === 'sync') icon = '<i data-lucide="cloud-lightning"></i>';
     
     toast.innerHTML = icon + ' <span>' + msg.replace(/\n/g, '<br>') + '</span>';
-    container.appendChild(toast); loadIcons(); setTimeout(() => toast.classList.add("show"), 10);
+    container.appendChild(toast); loadIcons(); if(tipo === 'sucesso') vibrar(100); if(tipo === 'erro') vibrar([50, 50, 50]); setTimeout(() => toast.classList.add("show"), 10);
     setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
@@ -1404,7 +1408,12 @@ function renderizarFiltroPromotores() {
         html = `<div class="card-promotor-filtro ${promotorFiltroAtual === 'todos' ? 'ativo' : ''}" onclick="setFiltroPromotor('todos')"><i data-lucide="layout-dashboard" class="lucide-sm"></i> Visão Geral (Sua Equipe)</div>`;
         for (let key in bancoUsuarios) { if (bancoUsuarios[key].cargo === "promotor" && bancoUsuarios[key].criadoPor === usuarioLogado.id) { html += `<div class="card-promotor-filtro ${promotorFiltroAtual === key ? 'ativo' : ''}" onclick="setFiltroPromotor('${key}')"><i data-lucide="user" class="lucide-sm"></i> ${bancoUsuarios[key].nome || key}</div>`; } }
         if(divSub) divSub.style.display = "none";
-    } div.innerHTML = html; loadIcons();
+    } 
+    div.innerHTML = html; loadIcons();
+    if (filtrados_total > limiteHistorico) {
+        div.innerHTML += `<button class="btn-sistema" style="margin-top: 15px; background: var(--bg-item); color: var(--primary); border: 1px solid var(--primary);" onclick="limiteHistorico += 50; renderizarListaHistorico();">Carregar mais históricos...</button>`;
+    }
+
 }
 function setFiltroPromotor(id) { promotorFiltroAtual = id; subPromotorFiltroAtual = "todos"; renderizarFiltroPromotores(); renderizarListaAcompanhamento(); }
 function setSubFiltroPromotor(id) { subPromotorFiltroAtual = id; renderizarFiltroPromotores(); renderizarListaAcompanhamento(); }
@@ -1457,7 +1466,12 @@ function renderizarListaAcompanhamento() {
             htmlLojas += `<div class="loja-card-acompanhamento"><div class="loja-titulo"><span><i data-lucide="store" class="lucide-sm"></i> ${loja}</span><span class="loja-badge-total">Total: ${totalLoja} un</span></div>${htmlVend}</div>`;
         }
         html += `<div style="margin-bottom: 25px; border-radius: 16px; box-shadow: 0 4px 10px var(--shadow-color); overflow: hidden; text-align: left; border: 1px solid var(--border-color);"><div style="background: ${pKey === 'sem_promotor' ? '#64748b' : 'var(--primary-gradiente)'}; color: white; padding: 16px 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 15px; display:flex; align-items:center;"><i data-lucide="user"></i> Promotor: ${nomePromotor}</span><span style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 20px; font-size: 13px;">Total: ${totalPromotor} un</span></div><div style="background: var(--bg-card); padding: 20px 15px 5px 15px; border-top: none; border-radius: 0 0 16px 16px;">${htmlLojas}</div></div>`;
-    } div.innerHTML = html; loadIcons();
+    } 
+    div.innerHTML = html; loadIcons();
+    if (filtrados_total > limiteHistorico) {
+        div.innerHTML += `<button class="btn-sistema" style="margin-top: 15px; background: var(--bg-item); color: var(--primary); border: 1px solid var(--primary);" onclick="limiteHistorico += 50; renderizarListaHistorico();">Carregar mais históricos...</button>`;
+    }
+
 }
 
 function fecharModalConfirmMostruario() { document.getElementById('modal-confirm-mostruario').classList.remove('ativo'); mostruarioEmEdicao = null; }
@@ -1498,7 +1512,12 @@ function renderizarFiltroPromotoresEstoque() {
             }
         }
     }
+    
     div.innerHTML = html; loadIcons();
+    if (filtrados_total > limiteHistorico) {
+        div.innerHTML += `<button class="btn-sistema" style="margin-top: 15px; background: var(--bg-item); color: var(--primary); border: 1px solid var(--primary);" onclick="limiteHistorico += 50; renderizarListaHistorico();">Carregar mais históricos...</button>`;
+    }
+
 }
 
 function setFiltroPromotorEstoque(id) { promotorEstoqueFiltroAtual = id; renderizarFiltroPromotoresEstoque(); renderizarListaEstoque(); }
@@ -1748,7 +1767,8 @@ function mudouSupHistorico() {
     aplicarFiltroHistorico();
 }
 
-function aplicarFiltroHistorico() { renderizarListaHistorico(); }
+let limiteHistorico = 50;
+function aplicarFiltroHistorico() { limiteHistorico = 50; renderizarListaHistorico(); }
 
 function carregarHistoricoDoBanco(forcarNuvem = false) {
     const div = document.getElementById("lista-historico");
@@ -1799,7 +1819,12 @@ function renderizarListaHistorico() {
         filtrados.push({row: row, originalIndex: index, pLogin: pLogin, isEstoque: isEstoque});
     });
 
-    if(filtrados.length === 0) { div.innerHTML = "<div class='mensagem-vazia'>Nenhuma ação encontrada.</div>"; return; }
+    
+    let filtrados_total = filtrados.length;
+    filtrados = filtrados.slice(0, limiteHistorico);
+    
+    if(filtrados_total === 0) { div.innerHTML = "<div class='mensagem-vazia'>Nenhuma ação encontrada.</div>"; return; }
+
     
     let html = "";
     filtrados.forEach(item => {
@@ -1858,7 +1883,12 @@ function renderizarListaHistorico() {
             </div>
         </div>`;
     });
+    
     div.innerHTML = html; loadIcons();
+    if (filtrados_total > limiteHistorico) {
+        div.innerHTML += `<button class="btn-sistema" style="margin-top: 15px; background: var(--bg-item); color: var(--primary); border: 1px solid var(--primary);" onclick="limiteHistorico += 50; renderizarListaHistorico();">Carregar mais históricos...</button>`;
+    }
+
 }
     
 
@@ -2109,7 +2139,20 @@ function gerarGraficos(dadosVendas) {
 
     let mesFiltro = document.getElementById("seletor-mes-dash").value;
 
+    
     Object.values(metricas).forEach(m => {
+        if (usuarioLogado.cargo === "promotor" && m.login === usuarioLogado.id) {
+            let pct = m.metaIndividual > 0 ? (m.realizadoGeral / m.metaIndividual) * 100 : 0;
+            let jaCelebrou = sessionStorage.getItem('celebrou_meta_' + usuarioLogado.id + mesFiltro);
+            if (pct >= 100 && !jaCelebrou && typeof confetti !== 'undefined') {
+                setTimeout(() => {
+                    confetti({ particleCount: 200, spread: 90, origin: { y: 0.6 }, zIndex: 10000 });
+                    vibrar([100, 50, 100, 50, 100]);
+                    sessionStorage.setItem('celebrou_meta_' + usuarioLogado.id + mesFiltro, 'true');
+                }, 800);
+            }
+        }
+    
         let comissaoUser = 0; 
         let supkey = m.login; 
         
